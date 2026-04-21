@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vector Distance vs Cosine Similarity</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f8f9fa;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            margin: 0;
+        }
+        .container {
+            display: flex;
+            gap: 40px;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+            flex-wrap: wrap;
+            justify-content: center;
+            max-width: 900px;
+        }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            min-width: 250px;
+        }
+        .control-group {
+            background: #f1f3f5;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+        }
+        .control-group h3 { margin: 0 0 10px 0; font-size: 16px; }
+        .input-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        input[type="range"] { width: 120px; }
+        .val-display { font-family: monospace; font-weight: bold; width: 30px; text-align: right;}
+        
+        .results {
+            margin-top: 10px;
+            padding: 15px;
+            background: #e3f2fd;
+            border-radius: 8px;
+            border: 1px solid #90caf9;
+        }
+        .results p { margin: 5px 0; font-size: 15px; }
+        .metric-val { font-family: monospace; font-weight: bold; font-size: 16px; }
+        
+        svg {
+            background: #ffffff;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+        }
+        .axis { stroke: #ced4da; stroke-width: 1; }
+        .grid-line { stroke: #f1f3f5; stroke-width: 1; }
+        .vec-a { stroke: #0d6efd; stroke-width: 3; marker-end: url(#arrowA); }
+        .vec-b { stroke: #dc3545; stroke-width: 3; marker-end: url(#arrowB); }
+        .dist-line { stroke: #6c757d; stroke-width: 2; stroke-dasharray: 5,5; }
+        .arc { stroke: #198754; stroke-width: 2; fill: rgba(25, 135, 84, 0.1); }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div>
+            <svg id="canvas" width="400" height="400">
+                <defs>
+                    <marker id="arrowA" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#0d6efd" />
+                    </marker>
+                    <marker id="arrowB" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#dc3545" />
+                    </marker>
+                </defs>
+                <g id="grid"></g>
+                <path id="arc" class="arc" />
+                <line id="dist-line" class="dist-line" />
+                <line id="vec-a" class="vec-a" />
+                <line id="vec-b" class="vec-b" />
+            </svg>
+        </div>
+
+        <div class="controls">
+            <div class="control-group" style="border-left: 4px solid #0d6efd;">
+                <h3 style="color: #0d6efd;">Vector A (Blue)</h3>
+                <div class="input-row">
+                    <label>X:</label>
+                    <input type="range" id="ax" min="0.1" max="10" step="0.1" value="4" oninput="update()">
+                    <span id="ax-val" class="val-display">4.0</span>
+                </div>
+                <div class="input-row">
+                    <label>Y:</label>
+                    <input type="range" id="ay" min="0.1" max="10" step="0.1" value="8" oninput="update()">
+                    <span id="ay-val" class="val-display">8.0</span>
+                </div>
+            </div>
+
+            <div class="control-group" style="border-left: 4px solid #dc3545;">
+                <h3 style="color: #dc3545;">Vector B (Red)</h3>
+                <div class="input-row">
+                    <label>X:</label>
+                    <input type="range" id="bx" min="0.1" max="10" step="0.1" value="8" oninput="update()">
+                    <span id="bx-val" class="val-display">8.0</span>
+                </div>
+                <div class="input-row">
+                    <label>Y:</label>
+                    <input type="range" id="by" min="0.1" max="10" step="0.1" value="3" oninput="update()">
+                    <span id="by-val" class="val-display">3.0</span>
+                </div>
+            </div>
+
+            <div class="results">
+                <p>Euclidean Distance: <br><span id="res-ed" class="metric-val" style="color:#6c757d">0.00</span></p>
+                <p>Cosine Similarity: <br><span id="res-cos" class="metric-val" style="color:#198754">0.00</span></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const scale = 35; // Pixels per unit
+        const originX = 25;
+        const originY = 375; // SVG y is inverted
+
+        function drawGrid() {
+            const grid = document.getElementById('grid');
+            grid.innerHTML = '';
+            for(let i=0; i<=10; i++) {
+                // Vertical lines
+                let x = originX + i * scale;
+                grid.innerHTML += `<line x1="${x}" y1="${originY}" x2="${x}" y2="${originY - 10*scale}" class="${i===0 ? 'axis':'grid-line'}" />`;
+                // Horizontal lines
+                let y = originY - i * scale;
+                grid.innerHTML += `<line x1="${originX}" y1="${y}" x2="${originX + 10*scale}" y2="${y}" class="${i===0 ? 'axis':'grid-line'}" />`;
+            }
+        }
+
+        function toSVG(x, y) {
+            return { x: originX + x * scale, y: originY - y * scale };
+        }
+
+        function update() {
+            const ax = parseFloat(document.getElementById('ax').value);
+            const ay = parseFloat(document.getElementById('ay').value);
+            const bx = parseFloat(document.getElementById('bx').value);
+            const by = parseFloat(document.getElementById('by').value);
+
+            document.getElementById('ax-val').innerText = ax.toFixed(1);
+            document.getElementById('ay-val').innerText = ay.toFixed(1);
+            document.getElementById('bx-val').innerText = bx.toFixed(1);
+            document.getElementById('by-val').innerText = by.toFixed(1);
+
+            const svgA = toSVG(ax, ay);
+            const svgB = toSVG(bx, by);
+            const svgO = toSVG(0, 0);
+
+            // Update Lines
+            document.getElementById('vec-a').setAttribute('x1', svgO.x);
+            document.getElementById('vec-a').setAttribute('y1', svgO.y);
+            document.getElementById('vec-a').setAttribute('x2', svgA.x);
+            document.getElementById('vec-a').setAttribute('y2', svgA.y);
+
+            document.getElementById('vec-b').setAttribute('x1', svgO.x);
+            document.getElementById('vec-b').setAttribute('y1', svgO.y);
+            document.getElementById('vec-b').setAttribute('x2', svgB.x);
+            document.getElementById('vec-b').setAttribute('y2', svgB.y);
+
+            document.getElementById('dist-line').setAttribute('x1', svgA.x);
+            document.getElementById('dist-line').setAttribute('y1', svgA.y);
+            document.getElementById('dist-line').setAttribute('x2', svgB.x);
+            document.getElementById('dist-line').setAttribute('y2', svgB.y);
+
+            // Calculate Metrics
+            const ed = Math.sqrt(Math.pow(ax - bx, 2) + Math.pow(ay - by, 2));
+            const dot = (ax * bx) + (ay * by);
+            const normA = Math.sqrt(ax*ax + ay*ay);
+            const normB = Math.sqrt(bx*bx + by*by);
+            const cosSim = dot / (normA * normB);
+
+            document.getElementById('res-ed').innerText = ed.toFixed(3);
+            document.getElementById('res-cos').innerText = cosSim.toFixed(3);
+
+            // Draw Arc (Visualizing the Angle)
+            const radius = 40;
+            const angleA = Math.atan2(ay, ax);
+            const angleB = Math.atan2(by, bx);
+            
+            const startAngle = Math.min(angleA, angleB);
+            const endAngle = Math.max(angleA, angleB);
+            
+            const p1 = toSVG(radius/scale * Math.cos(startAngle), radius/scale * Math.sin(startAngle));
+            const p2 = toSVG(radius/scale * Math.cos(endAngle), radius/scale * Math.sin(endAngle));
+            
+            // SVG Arc path
+            const arcPath = `M ${svgO.x} ${svgO.y} L ${p1.x} ${p1.y} A ${radius} ${radius} 0 0 0 ${p2.x} ${p2.y} Z`;
+            document.getElementById('arc').setAttribute('d', arcPath);
+        }
+
+        drawGrid();
+        update();
+    </script>
+</body>
+</html>
